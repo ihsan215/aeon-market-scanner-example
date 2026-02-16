@@ -1,0 +1,16 @@
+/target/
+
+# Cargo (optional local overrides)
+.cargo/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Env / secrets
+.env
+.env.*
+
+# Logs
+*.log
