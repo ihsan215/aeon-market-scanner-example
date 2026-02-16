@@ -1,8 +1,9 @@
-use aeon_market_scanner_rs::{
-    ArbitrageScanner, Binance, Bitfinex, Bitget, Btcturk, Bybit, Coinbase, Cryptocom, Gateio, Htx,
-    Kraken, Kucoin, Mexc, OKX, Upbit, CEXTrait, CexExchange, DexAggregator, MarketScannerError,
-};
 use aeon_market_scanner_rs::dex::chains::{ChainId, Token};
+use aeon_market_scanner_rs::{
+    ArbitrageScanner, Binance, Bitfinex, Bitget, Btcturk, Bybit, CEXTrait, CexExchange, Coinbase,
+    Cryptocom, DexAggregator, FeeOverrides, Gateio, Htx, Kraken, Kucoin, MarketScannerError, Mexc,
+    Upbit, OKX,
+};
 
 fn print_help() {
     eprintln!(
@@ -13,6 +14,7 @@ Usage:
   cargo run -- stream [EXCHANGE] <SYMBOL> [SYMBOL...]
   cargo run -- scan-cex <SYMBOL> <EXCHANGE> [EXCHANGE...]
   cargo run -- scan-dex <EXCHANGE> [EXCHANGE...] [quote_amount]
+  cargo run -- scan-cex-overrides
 
 Examples:
   cargo run -- price BTCUSDT
@@ -20,6 +22,7 @@ Examples:
   cargo run -- scan-cex BTCUSDT binance bybit
   cargo run -- scan-dex binance bybit 1000
   cargo run -- scan-dex binance bybit 25000
+  cargo run -- scan-cex-overrides
 
 Notes:
   scan-dex defaults to BTC/USDT (symbol=BTCUSDT, DEX=KyberSwap on BSC using BTCB/USDT).
@@ -52,7 +55,10 @@ fn parse_cex_exchange(s: &str) -> Option<CexExchange> {
     }
 }
 
-async fn stream_exchange<E: CEXTrait>(exchange: E, symbols: Vec<String>) -> Result<(), MarketScannerError> {
+async fn stream_exchange<E: CEXTrait>(
+    exchange: E,
+    symbols: Vec<String>,
+) -> Result<(), MarketScannerError> {
     if !exchange.supports_websocket() {
         eprintln!("WebSocket streaming is not supported for this exchange.");
         return Ok(());
@@ -169,12 +175,7 @@ async fn main() -> Result<(), MarketScannerError> {
             }
 
             let opportunities = ArbitrageScanner::scan_arbitrage_opportunities(
-                &symbol,
-                &exchanges,
-                None,
-                None,
-                None,
-                None,
+                &symbol, &exchanges, None, None, None, None, None,
             )
             .await?;
 
@@ -259,6 +260,7 @@ async fn main() -> Result<(), MarketScannerError> {
                 Some(&btcb),
                 Some(&usdt),
                 Some(quote_amount),
+                None,
             )
             .await?;
 
@@ -274,6 +276,38 @@ async fn main() -> Result<(), MarketScannerError> {
                     opp.executable_quantity
                 );
             }
+            Ok(())
+        }
+
+        "scan-cex-overrides" => {
+            let overrides = FeeOverrides::default()
+                .with_cex_taker_fee(CexExchange::Binance, 0.00075) // 0.075%
+                .with_cex_taker_fee(CexExchange::OKX, 0.0008); // 0.08%
+
+            let opportunities = ArbitrageScanner::scan_arbitrage_opportunities(
+                "BTCUSDT",
+                &[CexExchange::Binance, CexExchange::OKX],
+                None,
+                None,
+                None,
+                None,
+                Some(&overrides),
+            )
+            .await?;
+
+            println!("Found {} opportunities", opportunities.len());
+            for opp in opportunities.iter().take(10) {
+                println!(
+                    "{} -> {} {} spread={:.6} ({:.3}%) qty={:.8}",
+                    opp.source_exchange,
+                    opp.destination_exchange,
+                    opp.symbol,
+                    opp.spread,
+                    opp.spread_percentage,
+                    opp.executable_quantity
+                );
+            }
+
             Ok(())
         }
 
