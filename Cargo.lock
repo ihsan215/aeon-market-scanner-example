@@ -12,9 +12,9 @@ dependencies = [
 
 [[package]]
 name = "aeon-market-scanner-rs"
-version = "0.2.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f1435cf716b5d292b3a621a510e6da0e524ffe87f04a415a455ece75f67b0d8"
+checksum = "6d7ac3a857ad418dfe230ceb3275aa0157fd9abb4b36a8936ed8346d574073fa"
 dependencies = [
  "async-trait",
  "chrono",

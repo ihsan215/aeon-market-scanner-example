@@ -14,6 +14,9 @@ cargo run -- scan-cex-overrides
 # DEX leg uses KyberSwap on BNB Chain (BSC) by default (BTCB/USDT)
 cargo run -- scan-dex binance bybit mexc okx gateio kucoin bitget btcturk htx coinbase kraken bitfinex upbit cryptocom 1000
 cargo run -- scan-dex binance bybit mexc okx gateio kucoin bitget btcturk htx coinbase kraken bitfinex upbit cryptocom 25000
+
+# Cex ws arb
+cargo run -- scan-arb-ws
 ```
 
 ## Amounts

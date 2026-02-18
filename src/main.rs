@@ -4,7 +4,6 @@ use aeon_market_scanner_rs::{
     Cryptocom, DexAggregator, FeeOverrides, Gateio, Htx, Kraken, Kucoin, MarketScannerError, Mexc,
     Upbit, OKX,
 };
-
 fn print_help() {
     eprintln!(
         r#"aeon-market-scanner-example
@@ -13,6 +12,8 @@ Usage:
   cargo run -- price <SYMBOL>
   cargo run -- stream [EXCHANGE] <SYMBOL> [SYMBOL...]
   cargo run -- scan-cex <SYMBOL> <EXCHANGE> [EXCHANGE...]
+  cargo run -- scan-cex-example
+  cargo run -- scan-arb-ws
   cargo run -- scan-dex <EXCHANGE> [EXCHANGE...] [quote_amount]
   cargo run -- scan-cex-overrides
 
@@ -20,6 +21,8 @@ Examples:
   cargo run -- price BTCUSDT
   cargo run -- stream binance BTCUSDT ETHUSDT
   cargo run -- scan-cex BTCUSDT binance bybit
+  cargo run -- scan-cex-example
+  cargo run -- scan-arb-ws
   cargo run -- scan-dex binance bybit 1000
   cargo run -- scan-dex binance bybit 25000
   cargo run -- scan-cex-overrides
@@ -195,6 +198,94 @@ async fn main() -> Result<(), MarketScannerError> {
                     opp.executable_quantity
                 );
             }
+            Ok(())
+        }
+
+        "scan-cex-example" => {
+            let symbol = "BTCUSDT";
+            let opportunities = ArbitrageScanner::scan_arbitrage_opportunities(
+                symbol,
+                &[
+                    CexExchange::Binance,
+                    CexExchange::OKX,
+                    CexExchange::Bybit,
+                    CexExchange::Kucoin,
+                ],
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await?;
+
+            for opp in opportunities.iter().take(5) {
+                println!(
+                    "{} -> {} {} spread={:.4} ({:.3}%) qty={:.6}",
+                    opp.source_exchange,
+                    opp.destination_exchange,
+                    opp.symbol,
+                    opp.spread,
+                    opp.spread_percentage,
+                    opp.executable_quantity
+                );
+            }
+
+            Ok(())
+        }
+
+        "scan-arb-ws" => {
+            let symbols = ["BTCUSDT", "ETHUSDT"];
+            let exchanges = [CexExchange::Binance, CexExchange::OKX, CexExchange::Bybit];
+            let reconnect = true;
+            let max_attempts = Some(10);
+
+            eprintln!("Starting websocket arbitrage scan...");
+            eprintln!("- symbols: {:?}", symbols);
+            eprintln!("- exchanges: {:?}", exchanges);
+            eprintln!("- reconnect: {}", reconnect);
+            eprintln!("- max_attempts: {:?}", max_attempts);
+
+            let start = std::time::Instant::now();
+            let mut batch: u64 = 0;
+
+            let fee_overrides = FeeOverrides::default()
+                .with_cex_taker_fee(CexExchange::Binance, 0.0) // 0.0
+                .with_cex_taker_fee(CexExchange::OKX, 0.0); // 0.0
+
+            let mut rx = ArbitrageScanner::scan_arbitrage_from_websockets(
+                &symbols,
+                &exchanges,
+                Some(&fee_overrides),
+                reconnect,
+                max_attempts,
+            )
+            .await?;
+
+            eprintln!("Websocket arbitrage stream started. Waiting for batches...");
+
+            while let Some(opps) = rx.recv().await {
+                batch += 1;
+                eprintln!(
+                    "batch={} elapsed_ms={} opportunities={}",
+                    batch,
+                    start.elapsed().as_millis(),
+                    opps.len()
+                );
+
+                for o in opps.iter().take(5) {
+                    eprintln!(
+                        "{} -> {} {} spread={:.4} ({:.3}%)",
+                        o.source_exchange,
+                        o.destination_exchange,
+                        o.symbol,
+                        o.spread,
+                        o.spread_percentage
+                    );
+                }
+            }
+
+            println!("Websocket arbitrage stream ended.");
             Ok(())
         }
 
