@@ -15,9 +15,23 @@ cargo run -- scan-cex-overrides
 cargo run -- scan-dex binance bybit mexc okx gateio kucoin bitget btcturk htx coinbase kraken bitfinex upbit cryptocom 1000
 cargo run -- scan-dex binance bybit mexc okx gateio kucoin bitget btcturk htx coinbase kraken bitfinex upbit cryptocom 25000
 
-# Cex ws arb
+# CEX WebSocket arbitrage stream
 cargo run -- scan-arb-ws
+
+# DEX pool price listener (Uniswap V2/V3 style). Requires POOL_LISTENER_RPC_WS in .env
+cargo run -- pool-listener-v2
+cargo run -- pool-listener-v3
 ```
+
+## DEX pool listener
+
+Stream live prices from a single Uniswap V2 or V3 style pool over WebSocket RPC.
+
+- Set **`POOL_LISTENER_RPC_WS`** in `.env` (e.g. `wss://...` for BSC).
+- Default example uses BSC chain 56, a V2 pool; config is in code (`pool-listener` command).
+- **ListenMode**: `EveryBlock` (each new block) or `OnSwapEvent` (only on Swap events).
+- **PriceDirection**: `Token1PerToken0` (e.g. USDT per BNB) or `Token0PerToken1`.
+- **Reconnect**: `reconnect_attempts = 0` to disable; `reconnect_delay_ms` between attempts.
 
 ## Amounts
 

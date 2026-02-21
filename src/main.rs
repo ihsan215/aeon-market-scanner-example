@@ -1,9 +1,11 @@
 use aeon_market_scanner_rs::dex::chains::{ChainId, Token};
+use aeon_market_scanner_rs::{load_dotenv, stream_pool_prices};
 use aeon_market_scanner_rs::{
     ArbitrageScanner, Binance, Bitfinex, Bitget, Btcturk, Bybit, CEXTrait, CexExchange, Coinbase,
-    Cryptocom, DexAggregator, FeeOverrides, Gateio, Htx, Kraken, Kucoin, MarketScannerError, Mexc,
-    Upbit, OKX,
+    Cryptocom, DexAggregator, FeeOverrides, Gateio, Htx, Kraken, Kucoin, ListenMode,
+    MarketScannerError, Mexc, PoolKind, PoolListenerConfig, PriceDirection, Upbit, OKX,
 };
+
 fn print_help() {
     eprintln!(
         r#"aeon-market-scanner-example
@@ -16,6 +18,8 @@ Usage:
   cargo run -- scan-arb-ws
   cargo run -- scan-dex <EXCHANGE> [EXCHANGE...] [quote_amount]
   cargo run -- scan-cex-overrides
+  cargo run -- pool-listener-v2
+  cargo run -- pool-listener-v3
 
 Examples:
   cargo run -- price BTCUSDT
@@ -26,10 +30,13 @@ Examples:
   cargo run -- scan-dex binance bybit 1000
   cargo run -- scan-dex binance bybit 25000
   cargo run -- scan-cex-overrides
+  cargo run -- pool-listener-v2     # V2 pool, requires POOL_LISTENER_RPC_WS in .env
+  cargo run -- pool-listener-v3  # V3 pool, requires POOL_LISTENER_RPC_WS in .env
 
 Notes:
   scan-dex defaults to BTC/USDT (symbol=BTCUSDT, DEX=KyberSwap on BSC using BTCB/USDT).
   scan-dex quote_amount is in quote token units (here: USDT on BSC by default).
+  pool-listener / pool-listener-v3: DEX pool price stream (V2 or V3). Set POOL_LISTENER_RPC_WS in .env.
 
 Exchanges:
   binance, bybit, mexc, okx, gateio, kucoin, bitget, btcturk, htx,
@@ -71,7 +78,7 @@ async fn stream_exchange<E: CEXTrait>(
 
     let symbol_refs: Vec<&str> = symbols.iter().map(|s| s.as_str()).collect();
     let mut rx = exchange
-        .stream_price_websocket(&symbol_refs, true, Some(10))
+        .stream_price_websocket(&symbol_refs, 5, 5000)
         .await?;
 
     while let Some(update) = rx.recv().await {
@@ -237,14 +244,14 @@ async fn main() -> Result<(), MarketScannerError> {
         "scan-arb-ws" => {
             let symbols = ["BTCUSDT", "ETHUSDT"];
             let exchanges = [CexExchange::Binance, CexExchange::OKX, CexExchange::Bybit];
-            let reconnect = true;
-            let max_attempts = Some(10);
+            let reconnect = 5;
+            let reconnect_delay = 5000;
 
             eprintln!("Starting websocket arbitrage scan...");
             eprintln!("- symbols: {:?}", symbols);
             eprintln!("- exchanges: {:?}", exchanges);
             eprintln!("- reconnect: {}", reconnect);
-            eprintln!("- max_attempts: {:?}", max_attempts);
+            eprintln!("- reconnect_delay: {:?}", reconnect_delay);
 
             let start = std::time::Instant::now();
             let mut batch: u64 = 0;
@@ -258,7 +265,7 @@ async fn main() -> Result<(), MarketScannerError> {
                 &exchanges,
                 Some(&fee_overrides),
                 reconnect,
-                max_attempts,
+                reconnect_delay,
             )
             .await?;
 
@@ -399,6 +406,70 @@ async fn main() -> Result<(), MarketScannerError> {
                 );
             }
 
+            Ok(())
+        }
+
+        "pool-listener-v2" => {
+            load_dotenv();
+            let rpc_ws = std::env::var("POOL_LISTENER_RPC_WS")
+                .unwrap_or_else(|_| panic!("POOL_LISTENER_RPC_WS must be set (e.g. in .env)"));
+
+            let config = PoolListenerConfig {
+                rpc_ws_url: rpc_ws,
+                chain_id: 56,
+                pool_address: "0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE".to_string(),
+                pool_kind: PoolKind::V2,
+                listen_mode: ListenMode::EveryBlock,
+                price_direction: PriceDirection::Token0PerToken1,
+                symbol: Some("BNBUSDT".to_string()),
+                reconnect_attempts: 3,
+                reconnect_delay_ms: 5000,
+            };
+
+            println!(
+                "Pool listener: chain_id={} pool={} kind={:?} mode={:?}",
+                config.chain_id, config.pool_address, config.pool_kind, config.listen_mode
+            );
+
+            let mut rx = stream_pool_prices(config).await?;
+            while let Some(update) = rx.recv().await {
+                println!(
+                    "price={} block={} reserve0={:?} reserve1={:?}",
+                    update.price, update.block_number, update.reserve0, update.reserve1
+                );
+            }
+            Ok(())
+        }
+
+        "pool-listener-v3" => {
+            load_dotenv();
+            let rpc_ws = std::env::var("POOL_LISTENER_RPC_WS")
+                .unwrap_or_else(|_| panic!("POOL_LISTENER_RPC_WS must be set (e.g. in .env)"));
+
+            let config = PoolListenerConfig {
+                rpc_ws_url: rpc_ws,
+                chain_id: 56,
+                pool_address: "0x6fe9E9de56356F7eDBfcBB29FAB7cd69471a4869".to_string(), // USDT/BNB Uniswap V3 on BSC
+                pool_kind: PoolKind::V3,
+                listen_mode: ListenMode::EveryBlock,
+                price_direction: PriceDirection::Token0PerToken1,
+                symbol: Some("BNBUSDT".to_string()),
+                reconnect_attempts: 3,
+                reconnect_delay_ms: 5000,
+            };
+
+            println!(
+                "Pool listener V3: chain_id={} pool={} kind={:?} mode={:?}",
+                config.chain_id, config.pool_address, config.pool_kind, config.listen_mode
+            );
+
+            let mut rx = stream_pool_prices(config).await?;
+            while let Some(update) = rx.recv().await {
+                println!(
+                    "price={} block={} sqrt_price_x96={:?}",
+                    update.price, update.block_number, update.sqrt_price_x96
+                );
+            }
             Ok(())
         }
 
